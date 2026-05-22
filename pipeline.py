@@ -106,6 +106,49 @@ def parse_signal(message_text):
 # ── STAGE 3: VERIFICATION LAYER ─────────────────────────────────────────
 
 import yfinance as yf
+from alpaca.data.historical.option import OptionHistoricalDataClient
+from alpaca.data.requests import OptionSnapshotRequest
+
+def get_option_chain_data(ticker, expiration, strike, option_type):
+    """
+    Fetches bid, ask, IV, delta, and OI for the specific contract from Alpaca.
+    Returns dict of chain data or None on failure.
+    """
+    try:
+        exp_month, exp_day = expiration.split('/')
+        exp_year = str(datetime.now().year)[2:]
+        exp_str  = f"{exp_year}{int(exp_month):02d}{int(exp_day):02d}"
+        cp       = "C" if option_type == "CALL" else "P"
+        strike_str = f"{int(round(strike * 1000)):08d}"
+        symbol   = f"{ticker}{exp_str}{cp}{strike_str}"
+
+        client = OptionHistoricalDataClient(
+            api_key    = ALPACA_API_KEY,
+            secret_key = ALPACA_SECRET_KEY
+        )
+        req  = OptionSnapshotRequest(symbol_or_symbols=symbol)
+        snap = client.get_option_snapshot(req)
+
+        if not snap or symbol not in snap:
+            return None
+
+        s = snap[symbol]
+        quote   = s.latest_quote
+        greeks  = s.greeks
+
+        return {
+            'option_symbol': symbol,
+            'bid':           round(float(quote.bid_price), 2) if quote else None,
+            'ask':           round(float(quote.ask_price), 2) if quote else None,
+            'mid':           round((float(quote.bid_price) + float(quote.ask_price)) / 2, 2) if quote else None,
+            'iv':            round(float(s.implied_volatility) * 100, 1) if s.implied_volatility else None,
+            'delta':         round(float(greeks.delta), 3) if greeks else None,
+            'theta':         round(float(greeks.theta), 3) if greeks else None,
+        }
+    except Exception as e:
+        print(f"Option chain fetch failed: {e}")
+        return None
+
 
 def verify_trade(trade):
     ticker = trade['ticker']
@@ -145,7 +188,13 @@ def verify_trade(trade):
             except Exception:
                 earnings_before_exp = None
 
-        return {
+        # Alpaca option chain data
+        chain = get_option_chain_data(
+            trade['ticker'], trade['expiration'],
+            trade['strike'], trade['option_type']
+        )
+
+        result = {
             **trade,
             'current_price':    round(float(current_price), 2),
             'ma20':             round(float(ma20), 2),
@@ -158,8 +207,18 @@ def verify_trade(trade):
             'volume_above_avg': bool(last_volume > avg_volume),
             'next_earnings':    str(next_earnings) if next_earnings else 'Unknown',
             'earnings_before_exp': earnings_before_exp,
-            'otm_pct':          round(((trade['strike'] - current_price) / current_price) * 100, 1)
+            'otm_pct':          round(((trade['strike'] - current_price) / current_price) * 100, 1),
+            # Option chain fields — None if unavailable
+            'option_symbol':    chain.get('option_symbol') if chain else None,
+            'bid':              chain.get('bid') if chain else None,
+            'ask':              chain.get('ask') if chain else None,
+            'mid':              chain.get('mid') if chain else None,
+            'iv':               chain.get('iv') if chain else None,
+            'delta':            chain.get('delta') if chain else None,
+            'theta':            chain.get('theta') if chain else None,
         }
+        return result
+
     except Exception as e:
         return {**trade, 'verification_error': str(e)}
 
@@ -171,6 +230,19 @@ import anthropic
 def generate_brief(verified_trade):
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     t      = verified_trade
+
+    # Format option chain line — omit gracefully if data unavailable
+    def fmt(val, prefix="", suffix="", fallback="N/A"):
+        return f"{prefix}{val}{suffix}" if val is not None else fallback
+
+    chain_lines = (
+        f"- Contract: {fmt(t.get('option_symbol'))}\n"
+        f"- Bid/Ask: {fmt(t.get('bid'), '$')} / {fmt(t.get('ask'), '$')}  "
+        f"Mid: {fmt(t.get('mid'), '$')}\n"
+        f"- IV: {fmt(t.get('iv'), suffix='%')}\n"
+        f"- Delta: {fmt(t.get('delta'))}  Theta: {fmt(t.get('theta'))}\n"
+    )
+
     prompt = (
         "You are a disciplined options trading analyst. "
         "Analyze this swing trade signal and provide a concise go/no-go recommendation.\n\n"
@@ -178,6 +250,8 @@ def generate_brief(verified_trade):
         f"- Ticker: ${t['ticker']}\n"
         f"- Option: {t['strike']} {t['option_type']} exp {t['expiration']}\n"
         f"- Limit Price: ${t['limit_price']}\n\n"
+        f"OPTION CHAIN:\n"
+        f"{chain_lines}\n"
         f"TECHNICAL DATA:\n"
         f"- Current Price: ${t.get('current_price', 'N/A')}\n"
         f"- OTM: {t.get('otm_pct', 'N/A')}%\n"
@@ -214,9 +288,18 @@ def send_brief(trade, brief):
     expiration  = trade["expiration"]
     limit_price = trade["limit_price"]
 
+    # Include bid/ask in header if available
+    chain_summary = ""
+    if trade.get("bid") and trade.get("ask"):
+        chain_summary = f"Bid/Ask: ${trade['bid']}/${trade['ask']}"
+        if trade.get("iv"):
+            chain_summary += f" | IV: {trade['iv']}%"
+        chain_summary = f"{chain_summary}\n"
+
     body = (
         f"SWING ALERT: ${ticker}\n"
         f"{strike} {option_type} {expiration} @ ${limit_price}\n"
+        f"{chain_summary}"
         f"---\n"
         f"{brief}\n"
         f"---\n"
