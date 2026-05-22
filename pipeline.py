@@ -56,9 +56,9 @@ def parse_signal(message_text):
             'raw': text
         })
 
-    # Format B: Dane - $TICKER MM/DD STRIKECall or $TICKER MM/DD STRIKE C
+    # Format B: Dane - $TICKER MM/DD STRIKE Call/Put
     format_b = re.findall(
-        r'\$([A-Z]+)\s+(\d{1,2}/\d{2})\s+([\d.]+)\s*C(?:all)?',
+        r'\$([A-Z]+)\s+(\d{1,2}/\d{2})\s+([\d.]+)\s*(C(?:all)?|P(?:ut)?)',
         text, re.IGNORECASE
     )
     for match in format_b:
@@ -67,16 +67,36 @@ def parse_signal(message_text):
         stop_match  = re.search(r'Stop Loss[^:]*:\s*([^\n]+)', text, re.IGNORECASE)
         stop        = stop_match.group(1).strip() if stop_match else None
         targets     = re.findall(r'(?:1st|2nd|Final)\s+Target:\s*([\d.]+)', text, re.IGNORECASE)
-
+        opt_type    = 'PUT' if match[3].upper().startswith('P') else 'CALL'
         trades.append({
             'ticker':      match[0].upper(),
             'strike':      float(match[2]),
-            'option_type': 'CALL',
+            'option_type': opt_type,
             'expiration':  match[1],
             'limit_price': limit,
             'stop_loss':   stop,
             'targets':     targets,
             'format':      'B',
+            'raw':         text
+        })
+
+    # Format C: Brian Axelrod - TICKER STRIKE CALL/PUT MM/DD\n.XX entry per contract
+    format_c = re.findall(
+        r'^([A-Z]+)\s+([\d.]+)\s+(CALL|PUT)\s+(\d{1,2}/\d{2})',
+        text, re.IGNORECASE | re.MULTILINE
+    )
+    for match in format_c:
+        price_match = re.search(r'([\d.]+)\s+entry per contract', text, re.IGNORECASE)
+        limit       = float(price_match.group(1)) if price_match else 0.0
+        trades.append({
+            'ticker':      match[0].upper(),
+            'strike':      float(match[1]),
+            'option_type': match[2].upper(),
+            'expiration':  match[3],
+            'limit_price': limit,
+            'stop_loss':   None,
+            'targets':     [],
+            'format':      'C',
             'raw':         text
         })
 
@@ -180,7 +200,7 @@ def generate_brief(verified_trade):
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}]
     )
-    raw = message.content[0].text
+    raw   = message.content[0].text
     clean = re.sub(r"[*_`#]", "", raw)
     return clean
 
