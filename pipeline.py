@@ -180,7 +180,9 @@ def generate_brief(verified_trade):
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}]
     )
-    return message.content[0].text
+    raw = message.content[0].text
+    clean = re.sub(r"[*_`#]", "", raw)
+    return clean
 
 
 # ── STAGE 5: SMS DELIVERY (Gmail-to-Verizon bridge) ─────────────────────
