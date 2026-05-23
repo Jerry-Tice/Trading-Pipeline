@@ -4,6 +4,8 @@ import asyncio
 import imaplib
 import email
 import time
+import json
+import anthropic
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -30,125 +32,62 @@ print("Environment loaded successfully")
 
 def parse_signal(message_text):
     """
-    Returns a list of trade dicts if message is a swing trade alert.
-    Returns empty list if message should be ignored.
+    Uses Claude to extract trade details from any signal format.
+    Returns a list of trade dicts, or empty list if not a swing trade.
     """
     text = message_text.strip()
 
-    if not re.search(r'swing trade', text, re.IGNORECASE):
-        return []
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    trades = []
-
-    # Format A: MrConfluence - $TICKER $STRIKE C/P MM/DD @ PRICE
-    format_a = re.findall(
-        r'\$([A-Z]+)\s+\$?([\d.]+)\s+([CP])\s+(\d{1,2}/\d{2})\s+@\s+([\d.]+)',
-        text, re.IGNORECASE
+    prompt = (
+        "You are a trading signal parser. Extract options trade details from this message.\n\n"
+        "Rules:\n"
+        "- Only extract SWING trades. Day trades, lotto trades, and scalps should be ignored.\n"
+        "- If trade_type is ambiguous but expiration is more than 5 days out, treat as swing.\n"
+        "- If the message is not an options trade alert, return null.\n"
+        "- BTO means Buy To Open - treat as a swing trade entry signal.\n\n"
+        "Return ONLY valid JSON in this exact format (no explanation, no markdown):\n"
+        "{\n"
+        '  "trade_type": "swing",\n'
+        '  "ticker": "NVDA",\n'
+        '  "strike": 212.5,\n'
+        '  "option_type": "CALL",\n'
+        '  "expiration": "5/22",\n'
+        '  "limit_price": 0.0\n'
+        "}\n\n"
+        "Or return exactly: null\n\n"
+        f"Message:\n{text}"
     )
-    for match in format_a:
-        trades.append({
-            'ticker': match[0].upper(),
-            'strike': float(match[1]),
-            'option_type': 'CALL' if match[2].upper() == 'C' else 'PUT',
-            'expiration': match[3],
-            'limit_price': float(match[4]),
-            'format': 'A',
-            'raw': text
-        })
 
-    # Format B: Dane - $TICKER MM/DD STRIKE Call/Put
-    format_b = re.findall(
-        r'\$([A-Z]+)\s+(\d{1,2}/\d{2})\s+([\d.]+)\s*(C(?:all)?|P(?:ut)?)',
-        text, re.IGNORECASE
-    )
-    for match in format_b:
-        fill_match  = re.search(r'Fill Price:\s*([\d.]+)', text, re.IGNORECASE)
-        limit       = float(fill_match.group(1)) if fill_match else 0.0
-        stop_match  = re.search(r'Stop Loss[^:]*:\s*([^\n]+)', text, re.IGNORECASE)
-        stop        = stop_match.group(1).strip() if stop_match else None
-        targets     = re.findall(r'(?:1st|2nd|Final)\s+Target:\s*([\d.]+)', text, re.IGNORECASE)
-        opt_type    = 'PUT' if match[3].upper().startswith('P') else 'CALL'
-        trades.append({
-            'ticker':      match[0].upper(),
-            'strike':      float(match[2]),
-            'option_type': opt_type,
-            'expiration':  match[1],
-            'limit_price': limit,
-            'stop_loss':   stop,
-            'targets':     targets,
-            'format':      'B',
-            'raw':         text
-        })
-
-    # Format C: Brian Axelrod - TICKER STRIKE CALL/PUT MM/DD\n.XX entry per contract
-    format_c = re.findall(
-        r'^([A-Z]+)\s+([\d.]+)\s+(CALL|PUT)\s+(\d{1,2}/\d{2})',
-        text, re.IGNORECASE | re.MULTILINE
-    )
-    for match in format_c:
-        price_match = re.search(r'([\d.]+)\s+entry per contract', text, re.IGNORECASE)
-        limit       = float(price_match.group(1)) if price_match else 0.0
-        trades.append({
-            'ticker':      match[0].upper(),
-            'strike':      float(match[1]),
-            'option_type': match[2].upper(),
-            'expiration':  match[3],
-            'limit_price': limit,
-            'stop_loss':   None,
-            'targets':     [],
-            'format':      'C',
-            'raw':         text
-        })
-
-    return trades
-
-
-# ── STAGE 3: VERIFICATION LAYER ─────────────────────────────────────────
-
-import yfinance as yf
-from alpaca.data.historical.option import OptionHistoricalDataClient
-from alpaca.data.requests import OptionSnapshotRequest
-
-def get_option_chain_data(ticker, expiration, strike, option_type):
-    """
-    Fetches bid, ask, IV, delta, and OI for the specific contract from Alpaca.
-    Returns dict of chain data or None on failure.
-    """
     try:
-        exp_month, exp_day = expiration.split('/')
-        exp_year = str(datetime.now().year)[2:]
-        exp_str  = f"{exp_year}{int(exp_month):02d}{int(exp_day):02d}"
-        cp       = "C" if option_type == "CALL" else "P"
-        strike_str = f"{int(round(strike * 1000)):08d}"
-        symbol   = f"{ticker}{exp_str}{cp}{strike_str}"
-
-        client = OptionHistoricalDataClient(
-            api_key    = ALPACA_API_KEY,
-            secret_key = ALPACA_SECRET_KEY
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
         )
-        req  = OptionSnapshotRequest(symbol_or_symbols=symbol)
-        snap = client.get_option_snapshot(req)
+        response = message.content[0].text.strip()
 
-        if not snap or symbol not in snap:
-            return None
+        if response.lower() == "null":
+            return []
 
-        s = snap[symbol]
-        quote   = s.latest_quote
-        greeks  = s.greeks
+        parsed = json.loads(response)
+        if not parsed or parsed.get("trade_type") != "swing":
+            return []
 
-        return {
-            'option_symbol': symbol,
-            'bid':           round(float(quote.bid_price), 2) if quote else None,
-            'ask':           round(float(quote.ask_price), 2) if quote else None,
-            'mid':           round((float(quote.bid_price) + float(quote.ask_price)) / 2, 2) if quote else None,
-            'iv':            round(float(s.implied_volatility) * 100, 1) if s.implied_volatility else None,
-            'delta':         round(float(greeks.delta), 3) if greeks else None,
-            'theta':         round(float(greeks.theta), 3) if greeks else None,
+        trade = {
+            "ticker":      parsed["ticker"].upper().lstrip("$"),
+            "strike":      float(parsed["strike"]),
+            "option_type": parsed["option_type"].upper(),
+            "expiration":  parsed["expiration"],
+            "limit_price": float(parsed.get("limit_price") or 0.0),
+            "format":      "AI",
+            "raw":         text
         }
-    except Exception as e:
-        print(f"Option chain fetch failed: {e}")
-        return None
+        return [trade]
 
+    except Exception as e:
+        print(f"Signal parse error: {e}")
+        return []
 
 def verify_trade(trade):
     ticker = trade['ticker']
@@ -225,7 +164,6 @@ def verify_trade(trade):
 
 # ── STAGE 4: DECISION BRIEF ──────────────────────────────────────────────
 
-import anthropic
 
 def generate_brief(verified_trade):
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
