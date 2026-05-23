@@ -234,14 +234,22 @@ def send_brief(trade, brief):
             chain_summary += f" | IV: {trade['iv']}%"
         chain_summary = f"{chain_summary}\n"
 
+    if limit_price > 0:
+        header = f"SWING ALERT: ${ticker}\n{strike} {option_type} {expiration} @ ${limit_price}\n"
+        footer = "Reply GO to place order or NO to skip."
+    else:
+        mid = trade.get("mid")
+        mid_str = f"${mid}" if mid else "unavailable"
+        header = f"FYI SIGNAL: ${ticker}\n{strike} {option_type} {expiration}\nNo price in signal. Mid: {mid_str}\n"
+        footer = "No order will be placed — manual entry only."
+
     body = (
-        f"SWING ALERT: ${ticker}\n"
-        f"{strike} {option_type} {expiration} @ ${limit_price}\n"
+        f"{header}"
         f"{chain_summary}"
         f"---\n"
         f"{brief}\n"
         f"---\n"
-        f"Reply GO to place order or NO to skip."
+        f"{footer}"
     )
 
     if len(body) > 1600:
@@ -490,19 +498,23 @@ async def main():
             # Stage 5: Send SMS
             send_brief(trade, brief)
 
-            # Reply monitor: wait for GO/NO
-            go = await asyncio.get_event_loop().run_in_executor(
-                None, wait_for_reply, trade['ticker']
-            )
-
-            # Stage 6: Place order
-            if go:
-                print(f"GO received — placing order for ${trade['ticker']}")
-                await asyncio.get_event_loop().run_in_executor(
-                    None, place_order, trade
-                )
+            # Reply monitor and order placement — skip if no limit price
+            if trade['limit_price'] <= 0:
+                print(f"No limit price for ${trade['ticker']} — FYI brief sent, manual entry only")
             else:
-                print(f"NO-GO or timeout for ${trade['ticker']} — no order placed")
+                # Reply monitor: wait for GO/NO
+                go = await asyncio.get_event_loop().run_in_executor(
+                    None, wait_for_reply, trade['ticker']
+                )
+
+                # Stage 6: Place order
+                if go:
+                    print(f"GO received — placing order for ${trade['ticker']}")
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, place_order, trade
+                    )
+                else:
+                    print(f"NO-GO or timeout for ${trade['ticker']} — no order placed")
 
     await client.run_until_disconnected()
 
