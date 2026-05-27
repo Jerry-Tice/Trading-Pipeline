@@ -11,9 +11,12 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(os.path.expanduser("~/.config/trading/.env"))
 
+import platform
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if platform.system() == "Windows" else os.path.expanduser("~/.config/trading")
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# Load environment variables
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY")
 TELEGRAM_API_ID      = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH    = os.getenv("TELEGRAM_API_HASH")
@@ -461,7 +464,7 @@ from telethon import TelegramClient, events
 
 async def main():
     client = TelegramClient(
-        os.path.expanduser("~/.config/trading/telegram_session"),
+        os.path.join(BASE_DIR, "telegram_session"),
         TELEGRAM_API_ID,
         TELEGRAM_API_HASH
     )
