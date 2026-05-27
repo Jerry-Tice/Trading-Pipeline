@@ -38,7 +38,8 @@ def parse_signal(message_text):
     Uses Claude to extract trade details from any signal format.
     Returns a list of trade dicts, or empty list if not a swing trade.
     """
-    text = message_text.strip()
+    import re
+    text = re.sub(r'[^\x00-\x7F]+', ' ', message_text).strip()
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -65,10 +66,12 @@ def parse_signal(message_text):
     try:
         message = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=200,
+            max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
         response = message.content[0].text.strip()
+        response = re.sub(r'^```json\s*|\s*```$', '', response, flags=re.MULTILINE).strip()
+
 
         if response.lower() == "null":
             return []
