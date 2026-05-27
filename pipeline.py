@@ -351,19 +351,44 @@ from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
 
 def build_option_symbol(ticker, expiration, strike, option_type):
     """
-    Builds OCC option symbol: TICKER + YYMMDD + C/P + 8-digit strike.
-    Example: AAPL250620C00150000
+    Validates contract exists in Alpaca chain, returns OCC symbol.
+    Raises ValueError if contract not found.
     """
-    exp_month, exp_day = expiration.split('/')
-    exp_year = str(datetime.now().year)[2:]  # 2-digit year
-    exp_str  = f"{exp_year}{int(exp_month):02d}{int(exp_day):02d}"
+    from alpaca.data.historical.option import OptionHistoricalDataClient
+    from alpaca.data.requests import OptionChainRequest
 
+    # Build candidate symbol
+    exp_month, exp_day = expiration.split('/')
+    exp_year = str(datetime.now().year)[2:]
+    exp_str  = f"{exp_year}{int(exp_month):02d}{int(exp_day):02d}"
     cp       = "C" if option_type == "CALL" else "P"
-    # Strike in OCC format: multiply by 1000, zero-pad to 8 digits
     strike_int = int(round(strike * 1000))
     strike_str = f"{strike_int:08d}"
+    candidate = f"{ticker}{exp_str}{cp}{strike_str}"
 
-    return f"{ticker}{exp_str}{cp}{strike_str}"
+    # Validate against live chain
+    try:
+        data_client = OptionHistoricalDataClient(
+            api_key    = ALPACA_API_KEY,
+            secret_key = ALPACA_SECRET_KEY
+        )
+        exp_date = f"20{exp_year}-{int(exp_month):02d}-{int(exp_day):02d}"
+        request  = OptionChainRequest(
+            underlying_symbol = ticker,
+            expiration_date   = exp_date
+        )
+        chain = data_client.get_option_chain(request)
+
+        if candidate in chain:
+            print(f"Contract validated: {candidate}")
+            return candidate
+        else:
+            raise ValueError(f"Contract {candidate} not found in Alpaca chain for {ticker} {exp_date}")
+
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Chain lookup failed for {ticker}: {e}")
 
 
 def place_order(trade):
