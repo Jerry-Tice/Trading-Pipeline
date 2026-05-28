@@ -1,78 +1,53 @@
-# Trading Pipeline — Changelog
-**Project:** Trading Pipeline — Endoge Lab
-**Repo:** Jerry-Tice/Trading-Pipeline
-**Last Updated:** 2026-05-27
+# Trading Pipeline — Change Log
+**Endoge LLC / Vexara IQ Inc.  •  MS-01 Fletcher Hub  •  Started: May 19, 2026**
+Owner: Jerry Tice  •  Pipeline: `~/trading/pipeline.py` on MS-01  •  Credentials: `~/.config/trading/.env`
 
 ---
 
-## Session Log
+## Session Change Log
 
 | Date | Session | Area | Changes / Notes | Author |
 |------|---------|------|-----------------|--------|
-| 2026-05-18 | 1 | Infrastructure | Alpaca account created. API key, secret, and paper endpoint obtained. Credentials stored in `~/.config/trading/.env` on MS-01. Paper trading confirmed default. IBKR abandoned — 2FA/Gateway friction with TWS/IBC/Xvfb. | Jerry |
-| 2026-05-18 | 1 | Architecture | Pipeline architecture defined: TradeAlgo Telegram signal → Claude parser → yfinance verification → Claude decision brief → SMS (Verizon gateway) → GO/NO reply monitor → Alpaca order placement. | Jerry / Claude |
-| 2026-05-19 | 2 | Build | Alpaca execution module built replacing IBKR. `build_option_symbol()` function written (OCC format: TICKER+YYMMDD+C/P+8-digit strike). `place_order()` wired to paper-api.alpaca.markets. SMS confirmation and error handlers added. | Jerry / Claude |
-| 2026-05-19 | 2 | Build | Signal parser built using Claude API (claude-sonnet-4-6). Filters swing trades only — ignores day trades, scalps, lotto trades. Returns structured trade dict. | Jerry / Claude |
-| 2026-05-19 | 2 | Build | `verify_trade()` built using yfinance: pulls 60-day history, computes MA20, MA50, RSI, volume vs average, earnings date check, OTM%. Alpaca option chain data appended (bid, ask, mid, IV, delta, theta). | Jerry / Claude |
-| 2026-05-19 | 2 | Build | `generate_brief()` built — Claude produces GO/NO-GO/CONDITIONAL GO verdict with risk, technicals, catalyst, and action summary. | Jerry / Claude |
-| 2026-05-19 | 2 | Build | `send_brief()` built — Gmail-to-Verizon SMS gateway (8282319520@vtext.com). 1600 char limit enforced. | Jerry / Claude |
-| 2026-05-19 | 2 | Build | `wait_for_reply()` built — polls Gmail inbox for GO/NO reply from Verizon number. 30-minute timeout. Snapshots inbox before waiting to ignore stale messages. | Jerry / Claude |
-| 2026-05-21 | 3 | Infrastructure | systemd service configured: `/etc/systemd/system/trading-pipeline.service`. Service enabled for auto-start on boot. Pipeline confirmed running headlessly on MS-01 (Ubuntu, Tailscale IP 100.68.9.125). | Jerry / Claude |
-| 2026-05-21 | 3 | Infrastructure | Telegram session authenticated on MS-01. Session file stored at `~/.config/trading/telegram_session`. Monitoring TradeAlgoAlertsChannel confirmed active. | Jerry / Claude |
-| 2026-05-26 | 4 | Testing | Lab offline — storm/UPS took MS-01, Mac Mini M2, and G9-1 down. Shifted to Windows laptop (HP Envy, C:\Users\gttic\trading-test) as fallback environment. | Jerry |
-| 2026-05-26 | 4 | Testing | Python 3.14.5 installed on laptop. alpaca-py installed to system Python. Alpaca paper account auth validated: status ACTIVE, buying power $200K, Level 3 options confirmed. | Jerry / Claude |
-| 2026-05-26 | 4 | Testing | Test order placed: SPY260529C00575000 @ $1.00 limit, qty 1, status ACCEPTED. Confirmed in Alpaca dashboard. Order cancelled after validation. | Jerry / Claude |
-| 2026-05-26 | 4 | Strategy | Signal source pivot discussed. TradeAlgo has not delivered swing-aligned signals since pipeline completion (day trades, scalps, oil futures only). Evaluated Simpler Trading, Option Alpha, Unusual Whales, Benzinga. Self-directed signal model proposed: Simpler Scanner → manual SMS to Google Voice → pipeline execution. | Jerry / Claude |
-| 2026-05-27 | 5 | Signal | First real swing trade signal received from MrConfluence via TradeAlgo Telegram: NVDA $225 C 07/17, entry $7.80 limit, Buy to Open. Signal flagged RISKY by analyst. Stop: $207.50. Targets: $218/$224.25/$229/$238. | Jerry |
-| 2026-05-27 | 5 | Testing | Contract validation: queried Alpaca options chain for NVDA expiration 2026-07-17. 194 contracts returned. Target contract NVDA260717C00225000 confirmed listed. | Jerry / Claude |
-| 2026-05-27 | 5 | Execution | Paper order placed from laptop: NVDA260717C00225000 @ $7.80 limit, qty 1 (=$780 exposure, within $500-$1K parameter). Order ID: 140e3d0b-e3e3-4252-b2fb-648f8d393446. Status: PENDING_NEW → filled. | Jerry / Claude |
-| 2026-05-27 | 5 | Execution | Order confirmed filled in Alpaca dashboard. Position: NVDA260717C00225000, price $7.50, market value $750, P/L -$30 (paper). Daily change -$30.02. | Jerry |
-| 2026-05-27 | 5 | Infrastructure | Lab restored by Caleb — MikroTik router, TP-Link switch, and MS-01 back online after storm/UPS reset. | Caleb / Jerry |
-| 2026-05-27 | 5 | Infrastructure | MS-01 trading-pipeline.service confirmed auto-started on boot: active (running), PID 1198, 187MB memory. No manual intervention required. | Jerry |
-| 2026-05-27 | 5 | Code | Cross-platform path fix applied to pipeline.py. `load_dotenv` and `telegram_session` paths now use OS detection: Windows uses `os.path.dirname(os.path.abspath(__file__))`, Linux uses `~/.config/trading`. `import platform` added. `BASE_DIR` variable introduced. | Jerry / Claude |
-| 2026-05-27 | 5 | Code | Updated pipeline.py pushed to GitHub (commit 530027d): "Cross-platform path handling for Windows and Linux". 1 file changed, 6 insertions, 3 deletions. | Jerry |
-| 2026-05-27 | 5 | Infrastructure | MS-01 pulled updated code from GitHub (fast-forward merge). Service restarted: active (running), PID 1698. Both environments now in sync on cross-platform codebase. Laptop pipeline retired — MS-01 is authoritative monitor. | Jerry / Claude |
+| 2026-05-19 | 1 | Initial Setup | Project context established. Pipeline state documented (Stages 1–5 + reply monitor). Changelog created. | Jerry / Claude |
+| 2026-05-19 | 2 | Pipeline / Infra | Cleaned .env (removed duplicate Alpaca block, removed IBKR lines, relabeled # Gmail section). Built and deployed Stage 6 Alpaca order placement module. Tested OCC symbol builder. Confirmed Alpaca paper account connection ($200k buying power, status ACTIVE). pipeline.py rewritten: startup test code removed, IBKR vars removed, reply monitor wired into main handler, Stage 6 fully integrated. alpaca-py installed on MS-01. | Jerry / Claude |
+| 2026-05-21 | 3 | Pipeline / Infra | **SMS fix:** Stripped markdown characters (`*_\`#`) from Claude API output before SMS send (`32a01a8`). **Format B:** Added PUT support to Dane parser — dynamic opt_type from regex capture (`f885280`). **Format C:** Added Brian Axelrod parser (TICKER STRIKE CALL/PUT MM/DD + "entry per contract" price) (`f885280`). **Stage 3:** Added `get_option_chain_data()` — fetches bid/ask/mid/IV/delta/theta via Alpaca `OptionSnapshotRequest`; fails gracefully if contract unavailable. **Stage 4 prompt:** Added OPTION CHAIN section feeding greeks/IV to Claude. **Stage 5 SMS:** Bid/ask and IV now shown in SMS header when available. **NUC15:** Ollama installed as systemd service, bound to all interfaces (`0.0.0.0:11434`); Nemotron-Cascade-2 (24GB) pull initiated. MS-01 → NUC15 connectivity confirmed via Tailscale. | Jerry / Claude |
 
 ---
 
-## Open Backlog
+## Next Actions / Backlog
 
-| # | Item | Priority | Status |
-|---|------|----------|--------|
-| 1 | Fix `build_option_symbol()` — live chain lookup before order submission to confirm contract exists | High | Open |
-| 2 | Wire Google Voice SMS intake as self-directed signal source channel | High | Open |
-| 3 | Build Telegram signal parser test harness — validate MrConfluence alert format parsing end to end | Medium | Open |
-| 4 | Evaluate Simpler Trading scanner as primary self-directed signal source | Medium | Research |
-| 5 | Monitor NVDA260717C00225000 position — expiry July 17, 2026. Stop: $207.50 underlying | Medium | Active |
-| 6 | Restore Mac Mini M2 and G9-1 after UPS reset | Low | Pending |
-| 7 | Move Google Voice SMS intake design session to next lab session | Low | Parked |
-
----
-
-## Lab Stack
-
-| Device | Role | Status | Notes |
-|--------|------|--------|-------|
-| MS-01 (fletcher-hub) | Primary pipeline host | ONLINE | Ubuntu, Tailscale 100.68.9.125, systemd service active |
-| Mac Mini M2 | Nemo/OpenClaw host | TBD | Needs post-storm status check |
-| G9-1 | Lab workstation | TBD | Needs post-storm status check |
-| MikroTik RB5009 | Router / dual-WAN | ONLINE | Restored by Caleb 2026-05-27 |
-| TP-Link Switch | Gigabit switch | ONLINE | Restored by Caleb 2026-05-27 |
-| Windows Laptop (HP Envy) | Fallback environment | STANDBY | Pipeline retired, alpaca-py + dependencies installed |
+| Pri | Action Item | Owner / Machine | Status |
+|-----|-------------|-----------------|--------|
+| 1 | ~~Add ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_ENDPOINT to ~/.config/trading/.env~~ | Jerry → MS-01 | ✅ Done |
+| 2 | ~~Build Alpaca order placement module (Stage 6) in pipeline.py~~ | Jerry / Claude | ✅ Done |
+| 3 | ~~Evaluate Alpaca market data for option chain (bid/ask, IV, delta, theta) in Stage 3~~ | Jerry / Claude | ✅ Done — OI not available in snapshot API |
+| 4 | ~~Clean up startup test code in pipeline.py~~ | Jerry / Claude | ✅ Done |
+| 5 | ~~Fix markdown asterisks in SMS brief output~~ | Jerry / Claude | ✅ Done |
+| 6 | ~~Add PUT support to Format B (Dane) parser~~ | Jerry / Claude | ✅ Done |
+| 7 | ~~Add Format C parser for Brian Axelrod~~ | Jerry / Claude | ✅ Done |
+| 8 | ~~Wrap pipeline.py in systemd service on MS-01~~ | Jerry / MS-01 | ✅ Done (prior session) |
+| 9 | Alpaca option chain — OI field | Jerry / Claude | Pending — not in snapshot API; evaluate alternatives |
+| 10 | Cascade-2 smoke test on NUC15 | Jerry / NUC15 | Pending — pull in progress |
+| 11 | Nemotron 70B pull on NUC15 | Jerry / NUC15 | Pending — after Cascade-2 validated |
+| 12 | Open WebUI for David | Jerry / NUC15 | Pending — after Cascade-2 running |
+| 13 | First end-to-end paper trade test (wait for live TradeAlgo signal) | Jerry | Pending |
+| 14 | Attorney: Delaware corporate + startup IP (83(b) election clock not started) | Jerry | Pending |
+| 15 | CPA: Endoge/Vexara financials, retroactive Jan 1 2026 | Jerry | Pending |
+| 16 | Geekom A9 Max integration planning (arriving summer 2026) | Jerry | Future |
 
 ---
 
-## Key Decisions
+## Lab Stack Quick Reference
 
-| Decision | Rationale | Date |
-|----------|-----------|------|
-| Alpaca over IBKR | Pure API key auth, no 2FA/Gateway friction, paper trading default, Level 3 options | 2026-05-18 |
-| Paper trading first | Validate pipeline before live capital | 2026-05-18 |
-| IBKR retained for manual positions | Not part of automated pipeline | 2026-05-18 |
-| MS-01 as primary host | Ubuntu, headless, always-on via Tailscale, systemd managed | 2026-05-21 |
-| Self-directed signal model | TradeAlgo signals not aligned with swing parameters; retain human judgment on entry | 2026-05-26 |
-| Cross-platform codebase | Single pipeline.py with OS detection — no separate Windows/Linux versions | 2026-05-27 |
+| Host | OS / Hardware | Role | Key Details |
+|------|--------------|------|-------------|
+| MS-01 (Fletcher Hub) | Ubuntu 24.04 | Orchestration & pipeline host | 192.168.10.10 local \| 100.68.9.125 Tailscale |
+| NUC15 | Ubuntu, 80GB RAM | Ollama inference host | 100.97.109.36 Tailscale \| Nemotron-Cascade-2 pulling \| CPU-only |
+| Desktop | Windows, RTX 5060 Ti | GPU workloads | Heavy compute / local model training |
+| Geekom A9 Max | Coming summer 2026, 128GB RAM | Future heavy inference node | Not yet deployed |
+| Mac Mini | macOS | Secondary access | Connected via Tailscale |
+| Raspberry Pis | Raspberry Pi OS | Edge / monitoring | Various edge tasks |
 
 ---
 
-*IP Boundary: Personal trading automation — Endoge territory only. No Synergetics data, client information, or code involved.*
+*SEPARATION RULE: Lab stack (Endoge/Vexara) is completely isolated from Synergetics/MW360/Synovate work.*
